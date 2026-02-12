@@ -26,7 +26,13 @@ sudo docker compose down
 sudo env IPOD_MOUNTPOINT=/media UID=$(id -u) GID=$(id -g) docker compose up --build -d
 ```
 
-3. Open `http://localhost:8080`.
+To set a custom host IP/port:
+
+```bash
+sudo env IPOD_MOUNTPOINT=/media HOST_IP=0.0.0.0 HOST_PORT=8090 APP_PORT=8080 UID=$(id -u) GID=$(id -g) docker compose up --build -d
+```
+
+3. Open `http://localhost:<HOST_PORT>` (default `8080`).
 4. Keep mountpoint input as `/ipod` (default in container), then click `Load Library`.
 
 Hot unplug/replug support:
@@ -36,6 +42,9 @@ Hot unplug/replug support:
 - On unplug/replug it retries for a short window on that same path before returning an error.
 - Retry window is configurable with `IPOD_RECONNECT_WAIT_SECONDS` (default `60` in docker-compose).
 - Per-attempt `gpod-ls` timeout is configurable with `GPOD_LS_ATTEMPT_TIMEOUT_SECONDS` (default `8` in docker-compose).
+- Host exposure is configurable with `HOST_IP` and `HOST_PORT`.
+- App bind is configurable with `APP_HOST` and `APP_PORT`.
+- Gunicorn runtime is configurable with `GUNICORN_WORKERS`, `GUNICORN_TIMEOUT`, and `GUNICORN_GRACEFUL_TIMEOUT`.
 - Use a stable parent bind (e.g. `IPOD_MOUNTPOINT=/media`) so replugged iPods that remount as `IPOD1` still work without compose changes.
 - If you use `sudo`, pass env vars through sudo (`sudo env IPOD_MOUNTPOINT=/media UID=$(id -u) GID=$(id -g) docker compose up --build`) so compose does not fall back to defaults.
 
