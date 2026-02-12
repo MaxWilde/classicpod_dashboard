@@ -1,0 +1,29 @@
+services:
+  classicpod-dashboard:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - DEFAULT_MOUNTPOINT=/ipod
+      - IPOD_DISCOVERY_ROOTS=/run-media-host,/media-host,/mnt-host,/ipod
+    volumes:
+      - type: bind
+        source: ${IPOD_MOUNTPOINT:-/tmp/ipod}
+        target: /ipod
+        bind:
+          propagation: rshared
+      - type: bind
+        source: /run/media
+        target: /run-media-host
+        bind:
+          propagation: rshared
+      - type: bind
+        source: /media
+        target: /media-host
+        bind:
+          propagation: rshared
+      - type: bind
+        source: /mnt
+        target: /mnt-host
+        bind:
+          propagation: rshared

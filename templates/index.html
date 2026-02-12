@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ClassicPod Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <div class="ambient"></div>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">IPOD CLASSIC LIBRARY</p>
+        <h1>ClassicPod Dashboard</h1>
+        <p class="subtitle">
+          Browse your iPod music library via <code>gpod-utils</code>.
+        </p>
+      </header>
+
+      <section class="panel">
+        <form id="mount-form" class="mount-form">
+          <label for="mountpoint">Mountpoint or iTunesDB path</label>
+          <div class="form-row">
+            <input
+              id="mountpoint"
+              name="mountpoint"
+              type="text"
+              value="{{ default_mountpoint }}"
+              placeholder="/run/media/you/IPOD"
+              required
+            />
+            <button type="submit" id="load-button">Load Library</button>
+          </div>
+        </form>
+        <p id="status" class="status">Enter a mountpoint and load the library.</p>
+      </section>
+
+      <section id="stats" class="stats hidden">
+        <article class="stat-card">
+          <p class="stat-label">Tracks</p>
+          <p id="track-count" class="stat-value">0</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Artists</p>
+          <p id="artist-count" class="stat-value">0</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Albums</p>
+          <p id="album-count" class="stat-value">0</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-label">Total Time</p>
+          <p id="duration-total" class="stat-value">0h 0m</p>
+        </article>
+      </section>
+
+      <section id="browser" class="panel hidden">
+        <div class="add-music-wrap">
+          <h2>Add Music</h2>
+          <form id="add-form" class="add-form">
+            <input id="music-files" name="files" type="file" hidden multiple accept=".mp3,.m4a,.aac,.wav,.aiff,.flac,.ogg,.opus,.m4b" />
+            <input id="music-folder" name="folder-files" type="file" hidden webkitdirectory directory multiple accept=".mp3,.m4a,.aac,.wav,.aiff,.aif,.flac,.ogg,.opus,.m4b" />
+            <label for="music-source-mode">Source Type</label>
+            <select id="music-source-mode" name="music-source-mode">
+              <option value="files">Files</option>
+              <option value="folder">Folder (recursive)</option>
+            </select>
+            <div class="selection-actions">
+              <button type="button" id="select-music-button">Select Files</button>
+              <button type="button" id="clear-selection-button">Clear Selection</button>
+            </div>
+            <p id="selection-summary" class="selection-summary">No files selected.</p>
+            <button type="submit" id="add-button">Add Selected Files</button>
+          </form>
+        </div>
+        <div class="album-strip-wrap">
+          <h2>Albums</h2>
+          <div id="album-strip" class="album-strip"></div>
+        </div>
+        <div class="toolbar">
+          <input id="search" type="search" placeholder="Search title, artist, album..." />
+          <select id="sort">
+            <option value="title">Sort: Title</option>
+            <option value="artist">Sort: Artist</option>
+            <option value="album">Sort: Album</option>
+            <option value="year">Sort: Year</option>
+            <option value="duration">Sort: Duration</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Cover</th>
+                <th>Title</th>
+                <th>Artist</th>
+                <th>Album</th>
+                <th>Year</th>
+                <th>Duration</th>
+                <th>Bitrate</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tracks-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div id="album-modal" class="album-modal hidden" role="dialog" aria-modal="true" aria-labelledby="album-modal-title">
+      <div class="album-modal-content">
+        <button id="album-modal-close" class="album-modal-close" aria-label="Close">x</button>
+        <div class="album-modal-header">
+          <img id="album-modal-cover" src="" alt="" />
+          <div>
+            <h3 id="album-modal-title"></h3>
+            <p id="album-modal-meta" class="album-modal-meta"></p>
+          </div>
+        </div>
+        <div class="album-modal-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Artist</th>
+                <th>Year</th>
+                <th>Duration</th>
+                <th>Bitrate</th>
+              </tr>
+            </thead>
+            <tbody id="album-modal-tracks"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
