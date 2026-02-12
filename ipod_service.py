@@ -26,9 +26,6 @@ class GpodError(RuntimeError):
     pass
 
 
-DEFAULT_DISCOVERY_ROOTS = ("/run-media-host", "/media-host", "/mnt-host", "/run/media", "/media", "/mnt")
-
-
 def _looks_like_missing_itunesdb(message: str) -> bool:
     lowered = message.lower()
     return (
@@ -38,79 +35,85 @@ def _looks_like_missing_itunesdb(message: str) -> bool:
     )
 
 
-def _discovery_roots() -> list[str]:
-    raw = os.environ.get("IPOD_DISCOVERY_ROOTS", "").strip()
-    roots = list(DEFAULT_DISCOVERY_ROOTS)
-    if raw:
-        roots.extend([entry.strip() for entry in raw.split(",") if entry.strip()])
-
-    seen: set[str] = set()
-    cleaned: list[str] = []
-    for root in roots:
-        abs_root = os.path.abspath(root)
-        if abs_root in seen:
-            continue
-        if not os.path.isdir(abs_root):
-            continue
-        seen.add(abs_root)
-        cleaned.append(abs_root)
-    return cleaned
+def _reconnect_wait_seconds(default_seconds: float = 45.0) -> float:
+    raw = os.environ.get("IPOD_RECONNECT_WAIT_SECONDS", "").strip()
+    if not raw:
+        return default_seconds
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return default_seconds
+    return max(2.0, min(parsed, 180.0))
 
 
-def _has_itunesdb(candidate: str) -> bool:
-    if os.path.isfile(candidate):
-        return os.path.basename(candidate).lower() == "itunesdb"
-    if not os.path.isdir(candidate):
-        return False
-    checks = (
-        os.path.join(candidate, "iPod_Control", "iTunes", "iTunesDB"),
-        os.path.join(candidate, "iTunes_Control", "iTunes", "iTunesDB"),
-        os.path.join(candidate, "iPod_Control", "iTunesDB"),
+def _itunesdb_paths_for_root(root: str) -> tuple[str, str, str]:
+    return (
+        os.path.join(root, "iPod_Control", "iTunes", "iTunesDB"),
+        os.path.join(root, "iTunes_Control", "iTunes", "iTunesDB"),
+        os.path.join(root, "iPod_Control", "iTunesDB"),
     )
-    return any(os.path.isfile(path) for path in checks)
 
 
-def _scan_for_ipod_mounts(root: str, max_depth: int = 3) -> list[str]:
-    results: list[str] = []
-    stack: list[tuple[str, int]] = [(root, 0)]
+def _has_itunesdb_under_root(root: str) -> bool:
+    return any(os.path.isfile(path) for path in _itunesdb_paths_for_root(root))
+
+
+def _discover_ipod_roots_within(base: str, max_depth: int = 2) -> list[str]:
+    if not os.path.isdir(base):
+        return []
+
+    roots: list[str] = []
+    stack: list[tuple[str, int]] = [(base, 0)]
+
     while stack:
         current, depth = stack.pop()
-        if _has_itunesdb(current):
-            results.append(current)
+
+        if _has_itunesdb_under_root(current):
+            roots.append(current)
             continue
         if depth >= max_depth:
             continue
+
         try:
             with os.scandir(current) as entries:
                 for entry in entries:
-                    if not entry.is_dir(follow_symlinks=False):
-                        continue
-                    stack.append((entry.path, depth + 1))
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append((entry.path, depth + 1))
         except OSError:
             continue
-    return results
+
+    return roots
 
 
-def _discover_mountpoint_candidates(requested_mountpoint: str) -> list[str]:
-    seen: set[str] = set()
-    candidates: list[str] = []
+def _gpod_ls_candidates(requested_mountpoint: str) -> list[tuple[str, str]]:
+    mountpoint = os.path.abspath(requested_mountpoint)
+    candidates: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
 
-    def add(path: str) -> None:
-        normalized = os.path.abspath(path)
-        if normalized in seen:
+    def add(ls_arg: str, effective_mountpoint: str) -> None:
+        normalized_arg = os.path.abspath(ls_arg)
+        normalized_mountpoint = os.path.abspath(effective_mountpoint)
+        key = (normalized_arg, normalized_mountpoint)
+        if key in seen:
             return
-        seen.add(normalized)
-        candidates.append(normalized)
+        seen.add(key)
+        candidates.append(key)
 
-    requested_abs = os.path.abspath(requested_mountpoint)
-    if os.path.exists(requested_abs):
-        add(requested_abs)
-    if os.path.isfile(requested_abs) and os.path.basename(requested_abs).lower() == "itunesdb":
-        add(os.path.dirname(os.path.dirname(requested_abs)))
+    add(mountpoint, mountpoint)
 
-    for root in _discovery_roots():
-        for mount in _scan_for_ipod_mounts(root):
-            add(mount)
+    if os.path.isfile(mountpoint) and os.path.basename(mountpoint).lower() == "itunesdb":
+        parent_mount = os.path.dirname(os.path.dirname(mountpoint))
+        add(parent_mount, parent_mount)
+        return candidates
+
+    if os.path.isdir(mountpoint):
+        for db_path in _itunesdb_paths_for_root(mountpoint):
+            add(db_path, mountpoint)
+        for discovered_root in _discover_ipod_roots_within(mountpoint):
+            add(discovered_root, discovered_root)
+            for db_path in _itunesdb_paths_for_root(discovered_root):
+                add(db_path, discovered_root)
+
     return candidates
 
 
@@ -124,34 +127,63 @@ def _run_gpod_ls_once(mountpoint: str, timeout_seconds: int) -> subprocess.Compl
     )
 
 
+def _gpod_ls_attempt_timeout(total_timeout_seconds: int) -> int:
+    raw = os.environ.get("GPOD_LS_ATTEMPT_TIMEOUT_SECONDS", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+            return max(2, min(parsed, 30))
+        except ValueError:
+            pass
+    return max(2, min(10, total_timeout_seconds))
+
+
 def _run_gpod_ls_with_recovery(
     requested_mountpoint: str, timeout_seconds: int
 ) -> tuple[str, subprocess.CompletedProcess[str]]:
-    recovery_window = max(2.0, min(12.0, timeout_seconds / 4.0))
+    mountpoint = os.path.abspath(requested_mountpoint)
+    recovery_window = _reconnect_wait_seconds()
     deadline = time.monotonic() + recovery_window
-    last_result: tuple[str, subprocess.CompletedProcess[str]] | None = None
 
     while True:
-        candidates = _discover_mountpoint_candidates(requested_mountpoint)
-        if not candidates:
-            requested_abs = os.path.abspath(requested_mountpoint)
-            if os.path.exists(requested_abs):
-                candidates = [requested_abs]
+        saw_any_path = False
+        last_missing_db_result: tuple[str, subprocess.CompletedProcess[str]] | None = None
+        attempt_timeout = _gpod_ls_attempt_timeout(timeout_seconds)
 
-        for candidate in candidates:
-            result = _run_gpod_ls_once(candidate, timeout_seconds)
-            last_result = (candidate, result)
+        for ls_arg, effective_mountpoint in _gpod_ls_candidates(mountpoint):
+            if not os.path.exists(ls_arg):
+                continue
+            saw_any_path = True
+            try:
+                result = _run_gpod_ls_once(ls_arg, attempt_timeout)
+            except subprocess.TimeoutExpired:
+                if time.monotonic() >= deadline:
+                    raise GpodError(
+                        f"Timed out reading iTunesDB at {requested_mountpoint}. "
+                        "Device may still be settling after reconnect."
+                    )
+                continue
             if result.returncode == 0:
-                return candidate, result
-            message = result.stderr.strip() or result.stdout.strip() or "Unknown gpod-ls error."
-            if not _looks_like_missing_itunesdb(message):
-                return candidate, result
+                return effective_mountpoint, result
 
-        if last_result is not None and time.monotonic() >= deadline:
-            return last_result
-        if last_result is None and time.monotonic() >= deadline:
-            raise GpodError(f"Mountpoint does not exist: {requested_mountpoint}")
-        time.sleep(0.4)
+            message = result.stderr.strip() or result.stdout.strip() or "Unknown gpod-ls error."
+            if _looks_like_missing_itunesdb(message):
+                last_missing_db_result = (effective_mountpoint, result)
+                continue
+            return effective_mountpoint, result
+
+        if time.monotonic() >= deadline:
+            if last_missing_db_result is not None:
+                return last_missing_db_result
+            if saw_any_path:
+                raise GpodError(
+                    f"Mountpoint is present but iTunesDB is not readable yet: {requested_mountpoint}."
+                )
+            raise GpodError(
+                f"Mountpoint became unavailable: {requested_mountpoint}. "
+                "Reconnect/remount the device at the same path and try again."
+            )
+        time.sleep(0.5)
 
 
 

@@ -1,9 +1,11 @@
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from ipod_service import (
     GpodError,
+    _gpod_ls_candidates,
     add_tracks,
     delete_tracks,
     load_library,
@@ -79,10 +81,11 @@ class LoadLibraryTests(unittest.TestCase):
         with self.assertRaises(GpodError):
             load_library("/missing")
 
-    @patch("ipod_service._discover_mountpoint_candidates")
+    @patch("ipod_service.time.sleep", return_value=None)
+    @patch("ipod_service.os.path.exists")
     @patch("ipod_service._run_gpod_ls_once")
-    def test_load_library_recovers_after_replug(self, mock_ls_once, mock_discover) -> None:
-        mock_discover.return_value = ["/ipod", "/media-host/max/IPOD"]
+    def test_load_library_recovers_after_replug(self, mock_ls_once, mock_exists, _mock_sleep) -> None:
+        mock_exists.side_effect = [False, True, True]
         mock_ls_once.side_effect = [
             unittest.mock.Mock(returncode=1, stdout="", stderr="Couldn't find an iPod database on /ipod."),
             unittest.mock.Mock(returncode=0, stdout=SAMPLE_JSON, stderr=""),
@@ -90,8 +93,32 @@ class LoadLibraryTests(unittest.TestCase):
 
         payload = load_library("/ipod")
 
-        self.assertEqual(payload["mountpoint"], "/media-host/max/IPOD")
+        self.assertEqual(payload["mountpoint"], "/ipod")
         self.assertEqual(payload["track_count"], 1)
+        self.assertEqual(mock_ls_once.call_count, 2)
+        first_call = mock_ls_once.call_args_list[0].args
+        second_call = mock_ls_once.call_args_list[1].args
+        self.assertEqual(first_call[0], "/ipod")
+        self.assertEqual(second_call[0], "/ipod")
+
+    def test_gpod_ls_candidates_finds_itunesdb_in_descendant(self) -> None:
+        with tempfile.TemporaryDirectory() as base:
+            mount_root = os.path.join(base, "IPOD1")
+            db_dir = os.path.join(mount_root, "iPod_Control", "iTunes")
+            os.makedirs(db_dir, exist_ok=True)
+            db_path = os.path.join(db_dir, "iTunesDB")
+            with open(db_path, "wb") as fh:
+                fh.write(b"db")
+
+            candidates = _gpod_ls_candidates(base)
+            candidate_args = {item[0] for item in candidates}
+            candidate_mountpoints = {item[1] for item in candidates}
+
+            self.assertIn(base, candidate_args)
+            self.assertIn(mount_root, candidate_args)
+            self.assertIn(db_path, candidate_args)
+            self.assertIn(base, candidate_mountpoints)
+            self.assertIn(mount_root, candidate_mountpoints)
 
 
 class DeleteTracksTests(unittest.TestCase):

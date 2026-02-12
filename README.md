@@ -2,7 +2,7 @@
 
 Web app for browsing music on an iPod Classic (or other libgpod-compatible iPods) from a mounted filesystem path.
 
-The backend shells out to `gpod-ls -M <mountpoint>` from [`gpod-utils`](https://github.com/MaxWilde/gpod-utils), parses its JSON output, and serves a searchable dashboard UI.
+The backend shells out to `gpod-ls -M <mountpoint>` from `gpod-utils`, parses its JSON output, and serves a searchable dashboard UI.
 
 ## Features
 
@@ -18,11 +18,12 @@ The backend shells out to `gpod-ls -M <mountpoint>` from [`gpod-utils`](https://
 
 ## Run with Docker
 
-1. Mount your iPod on the host (example: `/run/media/max/IPOD`).
-2. Start the app:
+1. Mount your iPod on the host.
+2. Start the app (recommended):
 
 ```bash
-UID=$(id -u) GID=$(id -g) IPOD_MOUNTPOINT=/run/media/max/IPOD docker compose up --build
+sudo docker compose down
+sudo env IPOD_MOUNTPOINT=/media UID=$(id -u) GID=$(id -g) docker compose up --build -d
 ```
 
 3. Open `http://localhost:8080`.
@@ -30,9 +31,13 @@ UID=$(id -u) GID=$(id -g) IPOD_MOUNTPOINT=/run/media/max/IPOD docker compose up 
 
 Hot unplug/replug support:
 
-- The backend auto-discovers iPod mounts under `IPOD_DISCOVERY_ROOTS` (defaults include `/run-media-host`, `/media-host`, `/mnt-host`, and `/ipod`).
-- `docker-compose.yml` mounts `/run/media`, `/media`, and `/mnt` into the container with `rshared` propagation.
-- After unplug/replug, click `Load Library` again; container recreation is not required.
+- The backend only uses the exact mountpoint you specify (default `/ipod` in the container).
+- It may probe descendant directories under that same mountpoint to find `iTunesDB` (for example `/ipod/IPOD`, `/ipod/IPOD1`).
+- On unplug/replug it retries for a short window on that same path before returning an error.
+- Retry window is configurable with `IPOD_RECONNECT_WAIT_SECONDS` (default `60` in docker-compose).
+- Per-attempt `gpod-ls` timeout is configurable with `GPOD_LS_ATTEMPT_TIMEOUT_SECONDS` (default `8` in docker-compose).
+- Use a stable parent bind (e.g. `IPOD_MOUNTPOINT=/media`) so replugged iPods that remount as `IPOD1` still work without compose changes.
+- If you use `sudo`, pass env vars through sudo (`sudo env IPOD_MOUNTPOINT=/media UID=$(id -u) GID=$(id -g) docker compose up --build`) so compose does not fall back to defaults.
 
 Troubleshooting write access in Docker:
 

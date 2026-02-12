@@ -271,6 +271,23 @@ function openAlbumModal(album) {
   albumModal.classList.remove("hidden");
 }
 
+async function parseApiResponse(response, fallbackMessage) {
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  if (contentType.includes("application/json")) {
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || fallbackMessage);
+    }
+    return data;
+  }
+
+  const text = (await response.text()).trim();
+  if (!response.ok) {
+    throw new Error(text || fallbackMessage);
+  }
+  throw new Error(text || fallbackMessage);
+}
+
 async function loadLibrary(mountpoint, showLoadingStatus = true) {
   if (showLoadingStatus) {
     setStatus(`Loading library from ${mountpoint} ...`);
@@ -278,10 +295,7 @@ async function loadLibrary(mountpoint, showLoadingStatus = true) {
   loadButton.disabled = true;
   try {
     const response = await fetch(`/api/library?mountpoint=${encodeURIComponent(mountpoint)}`);
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to load iPod library.");
-    }
+    const data = await parseApiResponse(response, "Failed to load iPod library.");
 
     currentMountpoint = data.mountpoint;
     tracks = data.tracks || [];
@@ -332,10 +346,7 @@ async function deleteByPaths(ipodPaths, descriptor) {
         ipod_paths: ipodPaths,
       }),
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to delete from iPod.");
-    }
+    const data = await parseApiResponse(response, "Failed to delete from iPod.");
 
     await loadLibrary(currentMountpoint, false);
     setStatus(data.message);
@@ -386,10 +397,7 @@ addForm.addEventListener("submit", async (event) => {
       method: "POST",
       body: formData,
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "Failed to add tracks.");
-    }
+    const data = await parseApiResponse(response, "Failed to add tracks.");
 
     clearSelectedFiles();
     await loadLibrary(currentMountpoint, false);

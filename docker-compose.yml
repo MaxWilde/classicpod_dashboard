@@ -1,29 +1,16 @@
 services:
   classicpod-dashboard:
     build: .
+    user: "${UID:-1000}:${GID:-1000}"
     ports:
       - "8080:8080"
     environment:
       - DEFAULT_MOUNTPOINT=/ipod
-      - IPOD_DISCOVERY_ROOTS=/run-media-host,/media-host,/mnt-host,/ipod
+      - IPOD_RECONNECT_WAIT_SECONDS=60
+      - GPOD_LS_ATTEMPT_TIMEOUT_SECONDS=8
     volumes:
       - type: bind
-        source: ${IPOD_MOUNTPOINT:-/tmp/ipod}
+        source: ${IPOD_MOUNTPOINT:-/media}
         target: /ipod
-        bind:
-          propagation: rshared
-      - type: bind
-        source: /run/media
-        target: /run-media-host
-        bind:
-          propagation: rshared
-      - type: bind
-        source: /media
-        target: /media-host
-        bind:
-          propagation: rshared
-      - type: bind
-        source: /mnt
-        target: /mnt-host
         bind:
           propagation: rshared
