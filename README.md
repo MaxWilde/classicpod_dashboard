@@ -23,7 +23,7 @@ The backend shells out to `gpod-ls -M <mountpoint>` from `gpod-utils`, parses it
 
 ```bash
 sudo docker compose down
-sudo env IPOD_MOUNTPOINT=/media UID=$(id -u) GID=$(id -g) docker compose up --build -d
+sudo env IPOD_MOUNTPOINT=/media docker compose up --build -d
 ```
 
 To set a custom host IP/port:
